@@ -158,12 +158,13 @@
   body.is-mobile #controls-hint{display:none;}
 
   body.is-mobile #title{
-    top:14px;left:14px;
+    top:120px;left:auto;right:14px;
     padding:6px 12px;
     border-radius:10px;
     box-shadow:2.5px 2.5px 0 var(--navy);
     font-size:13px;
-    max-width:58vw;
+    max-width:50vw;
+    text-align:right;
   }
   body.is-mobile #title span{font-size:9px;margin-top:1px;}
 
@@ -675,23 +676,35 @@
   }
   function makeTree(x,z,scale){
     const g = new THREE.Group();
-    const trunk = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.15,0.2,1.2,6),
-      new THREE.MeshStandardMaterial({color:0x7A5230})
-    );
-    trunk.position.y = 0.6;
+
+    // gövde
+    const trunkMat = new THREE.MeshStandardMaterial({color:0x8B5A2B, roughness:0.85, flatShading:true});
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.22, 1.4, 6), trunkMat);
+    trunk.position.y = 0.7;
     trunk.castShadow = true;
     g.add(trunk);
-    const leafColors = [0x4C9A4F, 0x5FAE63, 0x3E8A44];
-    const leafColor = leafColors[Math.floor(Math.random()*leafColors.length)];
-    const leaves = new THREE.Mesh(
-      new THREE.ConeGeometry(1.1, 2.0, 7),
-      new THREE.MeshStandardMaterial({color:leafColor})
-    );
-    leaves.position.y = 2.0;
-    leaves.castShadow = true;
-    g.add(leaves);
+
+    // yapraklar — üst üste binen low-poly ikosahedron kümeleri (daha dolgun, daha canlı siluet)
+    const leafPalette = [0x4C9A4F, 0x5FAE63, 0x3E8A44, 0x6FBF6E];
+    const baseColor = leafPalette[Math.floor(Math.random()*leafPalette.length)];
+    const clusterDefs = [
+      {y:1.55, r:0.95, dx:0,     dz:0,     shade:0.8},
+      {y:2.2,  r:0.72, dx:0.34,  dz:-0.2,  shade:1.05},
+      {y:2.15, r:0.68, dx:-0.36, dz:0.24,  shade:0.92},
+      {y:2.7,  r:0.55, dx:0.05,  dz:0.05,  shade:1.15}
+    ];
+    clusterDefs.forEach(c=>{
+      const col = new THREE.Color(baseColor).multiplyScalar(c.shade);
+      const mat = new THREE.MeshStandardMaterial({color:col, roughness:0.75, flatShading:true});
+      const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(c.r, 0), mat);
+      mesh.position.set(c.dx, c.y, c.dz);
+      mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+      mesh.castShadow = true;
+      g.add(mesh);
+    });
+
     g.position.set(x,0,z);
+    g.rotation.y = Math.random()*Math.PI*2;
     g.scale.setScalar(scale);
     scene.add(g);
   }
@@ -706,33 +719,127 @@
     }
   }
 
+  // ---------- çimenler (low-poly çim demetleri) ----------
+  function scatterGrass(count){
+    const bladeGeo = new THREE.ConeGeometry(0.055, 0.42, 3);
+    bladeGeo.translate(0, 0.21, 0);
+    const grassMat = new THREE.MeshStandardMaterial({color:0x6FCB6B, roughness:0.9, flatShading:true});
+    const grass = new THREE.InstancedMesh(bladeGeo, grassMat, count);
+    const dummy = new THREE.Object3D();
+    const palette = [0x6FCB6B, 0x5FAE63, 0x8BD17E, 0x4C9A4F];
+    let done = 0, tries = 0;
+    while (done < count && tries < count*8){
+      tries++;
+      const gx = (Math.random()-0.5) * 96;
+      const gz = (Math.random()-0.5) * 96;
+      if (!farEnough(gx,gz)) continue;
+      dummy.position.set(gx, 0, gz);
+      dummy.rotation.y = Math.random()*Math.PI*2;
+      const s = 0.6 + Math.random()*0.9;
+      dummy.scale.set(s, s*(0.8+Math.random()*0.6), s);
+      dummy.updateMatrix();
+      grass.setMatrixAt(done, dummy.matrix);
+      if (grass.setColorAt) grass.setColorAt(done, new THREE.Color(palette[Math.floor(Math.random()*palette.length)]));
+      done++;
+    }
+    grass.instanceMatrix.needsUpdate = true;
+    if (grass.instanceColor) grass.instanceColor.needsUpdate = true;
+    scene.add(grass);
+  }
+  scatterGrass(260);
+
   // ---------- araba ----------
   const car = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({color:0xFF6B4A, roughness:0.4, metalness:0.1});
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 3.2), bodyMat);
-  body.position.y = 0.55;
-  body.castShadow = true;
-  car.add(body);
 
-  const cabinMat = new THREE.MeshStandardMaterial({color:0x26304A, roughness:0.3});
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.55, 1.6), cabinMat);
-  cabin.position.set(0, 1.05, -0.1);
+  const bodyMat = new THREE.MeshStandardMaterial({color:0xFF6B4A, roughness:0.45, metalness:0.15, flatShading:true});
+  const darkMat = new THREE.MeshStandardMaterial({color:0x1c2338, roughness:0.6, flatShading:true});
+  const glassMat = new THREE.MeshStandardMaterial({color:0x2a3350, roughness:0.15, metalness:0.5, flatShading:true});
+  const lightMat = new THREE.MeshStandardMaterial({color:0xFFF3B0, roughness:0.4, emissive:0xFFE38A, emissiveIntensity:0.5});
+  const tailMat = new THREE.MeshStandardMaterial({color:0xE23B3B, roughness:0.4, emissive:0x8f1a1a, emissiveIntensity:0.4});
+
+  // ana şasi
+  const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.46, 3.3), bodyMat);
+  chassis.position.y = 0.5;
+  chassis.castShadow = true;
+  car.add(chassis);
+
+  // kaput (ön, alçak)
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.26, 1.15), bodyMat);
+  hood.position.set(0, 0.63, -1.18);
+  hood.castShadow = true;
+  car.add(hood);
+
+  // bagaj kapağı (arka, alçak)
+  const trunkLid = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.2, 0.85), bodyMat);
+  trunkLid.position.set(0, 0.6, 1.32);
+  trunkLid.castShadow = true;
+  car.add(trunkLid);
+
+  // kabin
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.56, 1.55), bodyMat);
+  cabin.position.set(0, 1.06, -0.05);
   cabin.castShadow = true;
   car.add(cabin);
 
-  const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.35, 14);
+  // ön cam (eğik)
+  const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.5, 0.08), glassMat);
+  windshield.position.set(0, 0.92, -0.78);
+  windshield.rotation.x = -0.55;
+  windshield.castShadow = true;
+  car.add(windshield);
+
+  // arka cam (eğik)
+  const rearGlass = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.45, 0.08), glassMat);
+  rearGlass.position.set(0, 0.9, 0.72);
+  rearGlass.rotation.x = 0.5;
+  car.add(rearGlass);
+
+  // yan aynalar
+  [-1, 1].forEach(side=>{
+    const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.22), darkMat);
+    mirror.position.set(side*0.72, 0.98, -0.55);
+    car.add(mirror);
+  });
+
+  // tamponlar
+  const frontBumper = new THREE.Mesh(new THREE.BoxGeometry(1.88, 0.22, 0.22), darkMat);
+  frontBumper.position.set(0, 0.34, -1.62);
+  car.add(frontBumper);
+  const rearBumper = new THREE.Mesh(new THREE.BoxGeometry(1.88, 0.22, 0.22), darkMat);
+  rearBumper.position.set(0, 0.34, 1.62);
+  car.add(rearBumper);
+
+  // farlar / stoplar
+  [-0.62, 0.62].forEach(side=>{
+    const headlight = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.14, 0.06), lightMat);
+    headlight.position.set(side, 0.56, -1.66);
+    car.add(headlight);
+    const taillight = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.14, 0.06), tailMat);
+    taillight.position.set(side, 0.56, 1.66);
+    car.add(taillight);
+  });
+
+  // tekerlekler (jant detaylı)
+  const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.34, 12);
   const wheelMat = new THREE.MeshStandardMaterial({color:0x1a1a1a, roughness:0.9});
+  const hubGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.37, 8);
+  const hubMat = new THREE.MeshStandardMaterial({color:0xC7CCD6, roughness:0.35, metalness:0.6});
   const wheelPositions = [
-    [-1.0, 0.4, 1.1], [1.0, 0.4, 1.1],
-    [-1.0, 0.4, -1.1], [1.0, 0.4, -1.1]
+    [-1.0, 0.42, 1.12], [1.0, 0.42, 1.12],
+    [-1.0, 0.42, -1.12], [1.0, 0.42, -1.12]
   ];
   const wheels = wheelPositions.map(p=>{
+    const wGroup = new THREE.Group();
     const w = new THREE.Mesh(wheelGeo, wheelMat);
     w.rotation.z = Math.PI/2;
-    w.position.set(p[0],p[1],p[2]);
     w.castShadow = true;
-    car.add(w);
-    return w;
+    wGroup.add(w);
+    const hub = new THREE.Mesh(hubGeo, hubMat);
+    hub.rotation.z = Math.PI/2;
+    wGroup.add(hub);
+    wGroup.position.set(p[0], p[1], p[2]);
+    car.add(wGroup);
+    return wGroup;
   });
 
   car.position.set(0, 0, 6);
